@@ -1,0 +1,128 @@
+---
+title: "Linear Models"
+author: "Olya Besedina"
+data: "11/07/2019"
+output: github_document
+---
+  
+```{r setup, include = FALSE}
+library(tidyverse)
+library(p8105.datasets)
+library(viridis)
+
+knitr::opts_chunk$set(
+ 	echo = TRUE,
+ 	warning = FALSE,
+ 	fig.width = 8, 
+   fig.height = 6,
+   out.width = "90%"
+ )
+
+options(
+   ggplot2.continuous.colour = "viridis",
+   ggplot2.continuous.fill = "viridis"
+ )
+
+ scale_colour_discrete = scale_colour_viridis_d
+ scale_fill_discrete = scale_fill_viridis_d
+
+ theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+
+# linear models 
+
+```{r}
+
+set.seed(1)
+
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    boro = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(boro != "Staten Island") %>% 
+  select(price, stars, boro, neighborhood, room_type)
+```
+
+An good place to start is to consider price as an outcome that may depend on rating and borough. We fit that initial model in the following code.
+
+```{r}
+fit = lm(price ~ stars + boro, data = nyc_airbnb)
+```
+
+
+I cat predictors (boro), r assumes that it is a factor abd will orginize them is some order. If order is not specified than R wil use alphabetical order - Bronx
+
+```{r,eval= FALSE}
+# not very descriptive
+fit
+
+# better summary
+summary(fit)
+
+# extract the coef
+coef(fit)
+summary(fit)$coef
+
+# broom::tidy gives you the same thing but orginized in nice tibble
+
+# broom::glance gives you other important info like AIC and BIC
+fit %>% 
+  broom::glance()
+
+fit %>% 
+  broom::tidy()
+```
+
+Tidy the results
+
+```{r}
+fit %>% 
+  broom::tidy() %>% 
+  #replave default boro with nice looking one
+  mutate(
+    term = str_replace(term, "boro", "Boro: ")
+  ) %>%
+  knitr::kable(digits = 3)
+```
+
+#Take a look at factors
+
+fct_infreq - put cat var in order of how often they occur in data set
+the most freq boro is manhattan 
+
+```{r}
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(
+    boro = fct_infreq(boro),
+    room_type = fct_infreq(room_type)
+  )
+```
+
+Refit the last model 
+
+```{r}
+# now ref is manhattan
+fit = lm(price ~ stars + boro, data = nyc_airbnb)
+
+fit %>% 
+  broom::tidy()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
