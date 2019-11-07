@@ -115,6 +115,147 @@ fit %>%
 
 ```
 
+## diagnostics - look at the residuals 
+
+modelr is tidyverse adj
+cut off at 500 to exclude outliers 
+
+```{r}
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = stars, y = resid))+
+  geom_point() +
+  ylim(-500, 500)
+```
+
+Add fitted values, synonymous to predicted values
+
+```{r}
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
+
+```{r}
+fit_null = lm(price ~ stars + boro, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + boro + room_type, data = nyc_airbnb)
+```
+
+## Nesting
+
+It is possible that going from 4 to 5 stars has different effect in Manh and Bronx
+Check interactions
+```{r}
+fit_interaction = lm(price ~ stars * boro, data = nyc_airbnb)
+
+fit_interaction %>% 
+  broom::tidy()
+
+# in man is stars are increased by 1, price will go up by ave $43
+# in man starts effect the price a lot, in other boros not so much
+```
+
+Check interactions between stars and boro AND room type and boro
+
+```{r}
+nyc_airbnb %>% 
+  lm(price ~ stars * boro + room_type * boro, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+
+```
+
+Different model for each boro?
+
+```{r}
+nyc_airbnb %>% 
+  filter(boro=="Brooklyn") %>% 
+  lm(price ~ stars + room_type, data = .) %>% 
+  broom::tidy()
+```
+
+Try to map this insted 
+
+```{r}
+nyc_airbnb %>% 
+  # nest everything but boro
+  nest(data = -boro) %>% 
+  # fit lm for each boro as a new var
+  mutate(
+    models = map (.x = data, ~ lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(boro, results) %>% 
+  unnest()
+
+```
+
+
+Let's nest neighborhoods
+
+```{r}
+manhattan_nest_lm_results = 
+  nyc_airbnb %>% 
+  filter( boro =="Manhattan") %>% 
+  nest(data = -neighborhood) %>% 
+  mutate(
+    models = map (.x = data, ~ lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(neighborhood, results) %>% 
+  unnest()
+```
+
+
+```{r}
+manhattan_nest_lm_results %>% 
+  filter(str_detect(term, "room_type")) %>% 
+  ggplot(aes(x = neighborhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(~term) + 
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+```
+
+check that one point in noho - does not really work
+
+```{r}
+nyc_airbnb %>% 
+  filter(neighborhood == "NoHo", room_type == "Shared room")
+```
+
+Binary outcomes
+
+```{r, eval = FALSE}
+baltimore_df = 
+  read_csv("data/homicide-data.csv") %>% 
+  filter(city == "Baltimore") %>% 
+  mutate(
+    resolved = as.numeric(disposition == "Closed by arrest"),
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) %>% 
+  select(resolved, victim_age, victim_race, victim_sex)
+```
+
+Using these data, we can fit a logistic regression for the binary “resolved” outcome and victim demographics as predictors. This uses the glm function with the family specified to account for the non-Gaussian outcome distribution.
+
+```{r, eval = FALSE}
+fit_logistic = 
+  baltimore_df %>% 
+  glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial()) 
+```
+
+Many of the same tools we used to work with lm fits can be used for glm fits. The table below summaries the coefficients from the model fit; because logistic model estimates are log odds ratios, we include a step to compute odds ratios as well.
+
+```{r, eval = FALSE}
+fit_logistic %>% 
+  broom::tidy() %>% 
+  mutate(OR = exp(estimate)) %>%
+  select(term, log_OR = estimate, OR, p.value) %>% 
+  knitr::kable(digits = 3)
+```
+
+
+
+
+
 
 
 
