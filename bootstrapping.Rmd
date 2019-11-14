@@ -1,0 +1,243 @@
+---
+title: "Bootstrapping"
+author: "Olya Besedina"
+data: "11/14/2019"
+output: github_document
+---
+  
+```{r setup, include = FALSE}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+
+knitr::opts_chunk$set(
+ 	echo = TRUE,
+ 	warning = FALSE,
+ 	fig.width = 8, 
+   fig.height = 6,
+   out.width = "90%"
+ )
+
+options(
+   ggplot2.continuous.colour = "viridis",
+   ggplot2.continuous.fill = "viridis"
+ )
+
+ scale_colour_discrete = scale_colour_viridis_d
+ scale_fill_discrete = scale_fill_viridis_d
+
+ theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+
+```{r}
+n_samp = 250
+
+sim_df_const = 
+  tibble(
+    x = rnorm(n_samp, 1, 1),
+    error = rnorm(n_samp, 0, 1),
+    y = 2 + 3 * x + error
+  )
+
+sim_df_nonconst = sim_df_const %>% 
+  mutate(
+  error = error * .75 * x,
+  y = 2 + 3 * x + error
+)
+``` 
+
+```{r}
+sim_df = 
+  bind_rows(const = sim_df_const, nonconst = sim_df_nonconst, .id = "data_source") 
+
+sim_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point(alpha = .5) +
+  stat_smooth(method = "lm") +
+  facet_grid(~data_source) 
+```
+
+Fit two models
+
+```{r}
+sim_df_const %>% 
+  lm(y ~ x, data = .) %>% 
+  broom::tidy()
+```
+
+```{r}
+sim_df_nonconst %>% 
+  lm(y ~ x, data = .) %>% 
+  broom::tidy()
+```
+
+error distribution is different between the sets, but var is the same. 
+
+# How can I bootstrap
+
+write a function to draw a bootstrap sample based on a dataframe
+size = 1 , size what you are taking, 1 is 100%
+
+```{r}
+# w/o replacement
+sim_df_nonconst %>% 
+  sample_frac(size = 1, replace = FALSE) %>% 
+  arrange(x)
+
+# w replacement
+sim_df_nonconst %>% 
+  sample_frac(size = 1, replace = TRUE) %>% 
+  arrange(x)
+
+
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+```
+
+```{r}
+boot_sample(df = sim_df_nonconst) %>% 
+  ggplot(aes(x = x, y= y))+
+  geom_point(alpha = .5)+ 
+  stat_smooth(method = "lm")
+  
+```
+
+Can i create a df, to keet track of boot strap sample?
+
+Orginize a dataframe..
+rerun boot_sample(sim_df_nonconst) a 1000 times
+
+sample with replacement - gives you a diff sample of 250 people from the same sample, because some of the people will be picked more than once.
+
+```{r}
+boot_straps = 
+  tibble(
+    strap_number = 1:1000,
+    strap_sample = rerun(1000, boot_sample(sim_df_nonconst))
+  )
+
+boot_straps
+```
+
+Do some kind of analysis
+
+What is the distribution of the slope
+
+```{r}
+bootstrap_results = 
+  boot_straps %>% 
+  mutate(
+    models = map(.x = strap_sample, ~lm(y ~x, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(- strap_sample, - models) %>% 
+  unnest(results)
+```
+
+summarize these results 
+
+```{r}
+bootstrap_results %>% 
+  group_by(term) %>% 
+  summarize(se = sd(estimate))
+```
+
+
+# Try modelr package
+
+```{r}
+boot_straps = 
+  sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000)
+
+sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(y ~ x, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate))
+```
+
+
+# what if your assumptions are not wrong?
+
+```{r}
+sim_df_const %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(y ~ x, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate))
+```
+
+Good for data that does not meet the assumptions. 
+
+
+
+# airbnb data
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    boro = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(boro != "Staten Island") %>% 
+  select(price, stars, boro, neighborhood, room_type)
+```
+
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = room_type)) + 
+  geom_point()
+```
+
+error are not constant. regression assumptions are not valid. what is distribution of the slope?
+
+Reuse the stuff I just did
+
+```{r}
+airbnb_results = 
+  nyc_airbnb %>% 
+  filter(boro == "Manhattan") %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~lm(price ~ stars, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  filter(term == "stars") %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+
+```
+
+Distribution is skewed. does not ~N distribution. 
+95% CI will be your data with out 2.5% from bottom and top
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
